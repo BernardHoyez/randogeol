@@ -46,10 +46,23 @@
   </section>
 
   <section class="panel-section">
+    <h2>Position GPS</h2>
+    <label class="checkbox-row">
+      <input type="checkbox" id="checkbox-gps">
+      Afficher ma position sur la carte
+    </label>
+    <div id="gps-status" class="track-info-inline"></div>
+  </section>
+
+  <section class="panel-section">
     <h2>Tracé GPX / KML</h2>
     <input type="file" id="file-track" accept=".gpx,.kml,application/gpx+xml,application/vnd.google-earth.kml+xml">
     <div id="track-info" class="track-info">Aucun tracé chargé.</div>
     <button id="btn-clear-track" disabled>Effacer le tracé</button>
+  </section>
+
+  <section class="panel-section">
+    <p class="hint">Cliquez sur la carte géologique pour tenter d'afficher la notation du point (selon la couche, l'information peut ne pas être publiée par le serveur BRGM).</p>
   </section>
 
   <section class="panel-section credits">

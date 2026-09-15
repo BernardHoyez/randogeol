@@ -296,6 +296,144 @@ function parseKML(text) {
   return { points, waypoints };
 }
 
+/* ---------- Identification géologique au clic (GetFeatureInfo) ---------- */
+
+map.on('click', (e) => {
+  if (!geolLayer || !selectGeol.value) return;
+
+  const size = map.getSize();
+  const bounds = map.getBounds();
+  const crs = map.options.crs;
+  const sw = crs.project(bounds.getSouthWest());
+  const ne = crs.project(bounds.getNorthEast());
+  const point = map.latLngToContainerPoint(e.latlng);
+
+  const params = new URLSearchParams({
+    SERVICE: 'WMS',
+    VERSION: '1.3.0',
+    REQUEST: 'GetFeatureInfo',
+    LAYERS: selectGeol.value,
+    QUERY_LAYERS: selectGeol.value,
+    STYLES: '',
+    CRS: 'EPSG:3857',
+    BBOX: [sw.x, sw.y, ne.x, ne.y].join(','),
+    WIDTH: size.x,
+    HEIGHT: size.y,
+    I: Math.round(point.x),
+    J: Math.round(point.y),
+    INFO_FORMAT: 'text/plain',
+    FEATURE_COUNT: 5
+  });
+  const url = BRGM_WMS_URL + '?' + params.toString();
+
+  const popup = L.popup().setLatLng(e.latlng).setContent('Interrogation du serveur BRGM…').openOn(map);
+
+  fetch(url)
+    .then((r) => r.text())
+    .then((text) => {
+      const content = formatFeatureInfo(text, url);
+      popup.setContent(content);
+    })
+    .catch(() => {
+      // Le serveur peut refuser les requêtes cross-origin (fetch) : on propose
+      // d'ouvrir la réponse brute dans un nouvel onglet en secours.
+      popup.setContent(
+        'Impossible d\'interroger le serveur depuis l\'application.<br>' +
+        '<a href="' + url + '" target="_blank" rel="noopener">Voir la réponse brute</a>'
+      );
+    });
+});
+
+function formatFeatureInfo(text, rawUrl) {
+  const cleaned = text.trim();
+  const looksEmpty = cleaned === '' ||
+    /no features? were found|aucune donnée|GetFeatureInfo results:\s*$/i.test(cleaned);
+  if (looksEmpty) {
+    return 'Aucune notation disponible ici pour cette couche ' +
+      '(les cartes scannées/harmonisées du BRGM ne publient pas toujours ' +
+      'la notation géologique en interrogation directe).<br>' +
+      '<a href="' + rawUrl + '" target="_blank" rel="noopener">Voir la réponse brute</a>';
+  }
+  return '<pre style="white-space:pre-wrap;margin:0;font-size:.8rem;">' +
+    escapeHtml(cleaned) + '</pre>';
+}
+
+/* ---------- Position GPS ---------- */
+
+let gpsWatchId = null;
+let gpsMarker = null;
+let gpsAccuracyCircle = null;
+let gpsFirstFix = true;
+
+const checkboxGps = document.getElementById('checkbox-gps');
+const gpsStatus = document.getElementById('gps-status');
+
+checkboxGps.addEventListener('change', () => {
+  if (checkboxGps.checked) startGps(); else stopGps();
+});
+
+function startGps() {
+  if (!('geolocation' in navigator)) {
+    gpsStatus.textContent = 'Géolocalisation non disponible sur cet appareil.';
+    checkboxGps.checked = false;
+    return;
+  }
+  gpsFirstFix = true;
+  gpsStatus.textContent = 'Recherche du signal GPS…';
+  gpsWatchId = navigator.geolocation.watchPosition(onGpsPosition, onGpsError, {
+    enableHighAccuracy: true,
+    maximumAge: 2000,
+    timeout: 15000
+  });
+}
+
+function stopGps() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
+  if (gpsAccuracyCircle) { map.removeLayer(gpsAccuracyCircle); gpsAccuracyCircle = null; }
+  gpsStatus.textContent = '';
+}
+
+function onGpsPosition(pos) {
+  const latlng = [pos.coords.latitude, pos.coords.longitude];
+  gpsStatus.textContent = 'Précision : ±' + Math.round(pos.coords.accuracy) + ' m';
+
+  if (!gpsMarker) {
+    gpsMarker = L.circleMarker(latlng, {
+      radius: 8,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#1976d2',
+      fillOpacity: 1
+    }).addTo(map);
+    gpsAccuracyCircle = L.circle(latlng, {
+      radius: pos.coords.accuracy,
+      color: '#1976d2',
+      weight: 1,
+      fillColor: '#1976d2',
+      fillOpacity: 0.12
+    }).addTo(map);
+  } else {
+    gpsMarker.setLatLng(latlng);
+    gpsAccuracyCircle.setLatLng(latlng);
+    gpsAccuracyCircle.setRadius(pos.coords.accuracy);
+  }
+
+  if (gpsFirstFix) {
+    map.setView(latlng, Math.max(map.getZoom(), 15));
+    gpsFirstFix = false;
+  }
+}
+
+function onGpsError(err) {
+  gpsStatus.textContent = 'Erreur GPS : ' + err.message;
+  checkboxGps.checked = false;
+  stopGps();
+}
+
 /* ---------- Initialisation ---------- */
 
 refreshGeolLayer();
