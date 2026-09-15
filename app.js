@@ -2,7 +2,7 @@
 
 /* ---------- Carte de base ---------- */
 
-const map = L.map('map', { zoomControl: true }).setView([43.6, 6.2], 9); // Var, par défaut
+const map = L.map('map', { zoomControl: true }).setView([43.6, 6.2], 13); // Var, par défaut
 
 const baseLayers = {
   osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -27,7 +27,11 @@ baseLayers.osm.addTo(map);
 
 /* ---------- Couche géologique BRGM (WMS 1/50 000) ---------- */
 
-const BRGM_WMS_URL = 'https://mapsref.brgm.fr/wxs/referentiel/geologie';
+// Ces 3 couches (SCAN_D_GEOL50, SCAN_H_GEOL50, SCAN_H_RELIEF_GEOL50) ne sont
+// exposées que par ce service WMS ; mapsref.brgm.fr/wxs/referentiel/geologie
+// n'a que des couches globales (SCAN_GEOL50) et ne les contient pas.
+// Échelle d'affichage utile : environ 1/9 000 à 1/251 000 (zoom ville/département).
+const BRGM_WMS_URL = 'https://geoservices.brgm.fr/geologie';
 
 let geolLayer = null;
 
