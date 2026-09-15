@@ -70,6 +70,19 @@
   </section>
 
   <section class="panel-section">
+    <h2>Sauvegarde entre appareils</h2>
+    <p class="hint">
+      Exportez vos départements importés dans un fichier, à transférer manuellement
+      (e-mail, cloud, câble…) puis à réimporter sur un autre appareil (ex. PC ↔ smartphone).
+    </p>
+    <button id="btn-export-backup" style="width:100%;padding:.5rem;">Exporter mes départements</button>
+    <div id="export-status" class="track-info-inline"></div>
+    <input type="file" id="file-backup" accept=".json,application/json" style="margin-top:.6rem;">
+    <button id="btn-import-backup" style="margin-top:.5rem;width:100%;padding:.5rem;">Importer une sauvegarde</button>
+    <div id="backup-import-status" class="track-info-inline"></div>
+  </section>
+
+  <section class="panel-section">
     <h2>Position GPS</h2>
     <label class="checkbox-row">
       <input type="checkbox" id="checkbox-gps">

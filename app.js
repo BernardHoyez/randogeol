@@ -680,6 +680,75 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/* ---------- Sauvegarde entre appareils (export/import des départements importés) ---------- */
+
+const btnExportBackup = document.getElementById('btn-export-backup');
+const exportStatus = document.getElementById('export-status');
+const fileBackup = document.getElementById('file-backup');
+const btnImportBackup = document.getElementById('btn-import-backup');
+const backupImportStatus = document.getElementById('backup-import-status');
+
+btnExportBackup.addEventListener('click', async () => {
+  exportStatus.textContent = 'Préparation de l\'export…';
+  await new Promise((r) => setTimeout(r, 10));
+  try {
+    const imported = await idbGetAll();
+    if (!imported.length) {
+      exportStatus.textContent = 'Aucun département importé à exporter ' +
+        '(le Var est déjà fourni avec l\'app, pas besoin de le sauvegarder).';
+      return;
+    }
+    const backup = {
+      type: 'randogeol-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      departments: imported
+    };
+    const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'randogeol-departements-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    exportStatus.textContent = imported.length + ' département(s) exporté(s). ' +
+      'Transférez ce fichier sur l\'autre appareil (email, cloud, câble…) puis importez-le ici.';
+  } catch (e) {
+    exportStatus.textContent = 'Erreur d\'export : ' + e.message;
+  }
+});
+
+btnImportBackup.addEventListener('click', async () => {
+  const file = fileBackup.files[0];
+  if (!file) {
+    backupImportStatus.textContent = 'Choisissez un fichier de sauvegarde (.json) au préalable.';
+    return;
+  }
+  backupImportStatus.textContent = 'Lecture de la sauvegarde…';
+  await new Promise((r) => setTimeout(r, 10));
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    if (backup.type !== 'randogeol-backup' || !Array.isArray(backup.departments)) {
+      throw new Error('Ce fichier n\'est pas reconnu comme une sauvegarde randogeol.');
+    }
+    let count = 0;
+    for (const dept of backup.departments) {
+      if (!dept.code || !dept.featureCollection) continue;
+      await idbPut(dept);
+      await activateDepartment(dept.code, dept.featureCollection);
+      count++;
+    }
+    await initDepartments();
+    backupImportStatus.textContent = count + ' département(s) restauré(s), disponibles hors-ligne sur cet appareil.';
+    fileBackup.value = '';
+  } catch (e) {
+    backupImportStatus.textContent = 'Erreur d\'import : ' + e.message;
+  }
+});
+
 /* ---------- Identification géologique au clic (GetFeatureInfo) ---------- */
 
 map.on('click', (e) => {
