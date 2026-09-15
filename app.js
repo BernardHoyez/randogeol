@@ -388,41 +388,297 @@ function formatFormationProps(props) {
 const selectDepartment = document.getElementById('select-department');
 const departmentStatus = document.getElementById('department-status');
 
+/* -- IndexedDB : persistance locale des départements importés par l'utilisateur -- */
+
+const IDB_NAME = 'randogeol-db';
+const IDB_STORE = 'departments';
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(IDB_STORE, { keyPath: 'code' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(record) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetAll() {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(code) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(code);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* -- Simplification Douglas-Peucker (tolérance en degrés, ~30 m à cette latitude) -- */
+
+const SIMPLIFY_TOLERANCE_DEG = 0.0003;
+
+function perpendicularDistance(pt, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  if (dx === 0 && dy === 0) return Math.hypot(pt[0] - a[0], pt[1] - a[1]);
+  const t = ((pt[0] - a[0]) * dx + (pt[1] - a[1]) * dy) / (dx * dx + dy * dy);
+  const px = a[0] + t * dx, py = a[1] + t * dy;
+  return Math.hypot(pt[0] - px, pt[1] - py);
+}
+
+function douglasPeucker(points, epsilon) {
+  if (points.length < 3) return points.slice();
+  let dmax = 0, index = 0;
+  const end = points.length - 1;
+  for (let i = 1; i < end; i++) {
+    const d = perpendicularDistance(points[i], points[0], points[end]);
+    if (d > dmax) { dmax = d; index = i; }
+  }
+  if (dmax > epsilon) {
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+  return [points[0], points[end]];
+}
+
+function simplifyRing(ring) {
+  if (ring.length <= 4) return ring;
+  const simplified = douglasPeucker(ring, SIMPLIFY_TOLERANCE_DEG);
+  return simplified.length >= 4 ? simplified : ring;
+}
+
+function simplifyGeometry(geometry) {
+  if (geometry.type === 'Polygon') {
+    geometry.coordinates = geometry.coordinates.map(simplifyRing);
+  } else if (geometry.type === 'MultiPolygon') {
+    geometry.coordinates = geometry.coordinates.map((poly) => poly.map(simplifyRing));
+  }
+  return geometry;
+}
+
+function roundCoords(geometry) {
+  const round = (pt) => [Math.round(pt[0] * 1e5) / 1e5, Math.round(pt[1] * 1e5) / 1e5];
+  if (geometry.type === 'Polygon') {
+    geometry.coordinates = geometry.coordinates.map((r) => r.map(round));
+  } else if (geometry.type === 'MultiPolygon') {
+    geometry.coordinates = geometry.coordinates.map((p) => p.map((r) => r.map(round)));
+  }
+  return geometry;
+}
+
+const PROPERTY_WHITELIST = ['NOTATION', 'DESCR', 'CODE', 'CODE_LEG', 'CARTE'];
+
+function filterProperties(props) {
+  const out = {};
+  for (const key of Object.keys(props)) {
+    if (PROPERTY_WHITELIST.includes(key.toUpperCase())) out[key] = props[key];
+  }
+  return out;
+}
+
+/* -- Chargement d'un département (embarqué avec l'app, ou importé) -- */
+
+async function activateDepartment(code, geojson) {
+  geojson.features.forEach((f) => { f._bbox = computeBBox(f.geometry); });
+  loadedDepartments[code] = geojson;
+}
+
 async function initDepartments() {
+  let builtIn = [];
   try {
     const res = await fetch('./data/departments.json');
-    const list = await res.json();
-    if (!list.length) {
-      selectDepartment.innerHTML = '<option value="">Aucun département disponible</option>';
-      return;
-    }
-    selectDepartment.innerHTML =
-      '<option value="">— Choisir —</option>' +
-      list.map((d) => '<option value="' + d.code + '" data-file="' + d.fichier + '">' +
-        escapeHtml(d.nom) + '</option>').join('');
+    builtIn = await res.json();
   } catch (e) {
-    selectDepartment.innerHTML = '<option value="">Liste indisponible</option>';
+    builtIn = [];
   }
+
+  let imported = [];
+  try {
+    imported = await idbGetAll();
+  } catch (e) {
+    imported = [];
+  }
+
+  renderDepartmentOptions(builtIn, imported);
+  renderImportedList(imported);
+}
+
+function renderDepartmentOptions(builtIn, imported) {
+  const options = ['<option value="">— Choisir —</option>'];
+  builtIn.forEach((d) => {
+    options.push('<option value="' + d.code + '" data-source="built-in" data-file="' +
+      d.fichier + '">' + escapeHtml(d.nom) + '</option>');
+  });
+  imported.forEach((d) => {
+    options.push('<option value="' + d.code + '" data-source="imported">' +
+      escapeHtml(d.nom) + ' (importé)</option>');
+  });
+  selectDepartment.innerHTML = options.length > 1
+    ? options.join('')
+    : '<option value="">Aucun département disponible</option>';
+}
+
+function renderImportedList(imported) {
+  const container = document.getElementById('imported-list');
+  if (!imported.length) { container.innerHTML = ''; return; }
+  container.innerHTML = imported.map((d) =>
+    '<div class="imported-row"><span>' + escapeHtml(d.nom) + ' — ' +
+    d.nbFeatures + ' formations</span>' +
+    '<button data-code="' + d.code + '">Supprimer</button></div>'
+  ).join('');
+  container.querySelectorAll('button[data-code]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const code = btn.dataset.code;
+      await idbDelete(code);
+      delete loadedDepartments[code];
+      await initDepartments();
+      departmentStatus.textContent = 'Département supprimé.';
+    });
+  });
 }
 
 selectDepartment.addEventListener('change', async () => {
   const code = selectDepartment.value;
   if (!code || loadedDepartments[code]) return;
-  const file = selectDepartment.selectedOptions[0].dataset.file;
+  const option = selectDepartment.selectedOptions[0];
+
   departmentStatus.textContent = 'Chargement des formations…';
   try {
-    const res = await fetch(file);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const geojson = await res.json();
-    geojson.features.forEach((f) => { f._bbox = computeBBox(f.geometry); });
-    loadedDepartments[code] = geojson;
-    departmentStatus.textContent = geojson.features.length + ' formations chargées. Cliquez sur la carte.';
+    if (option.dataset.source === 'imported') {
+      const record = (await idbGetAll()).find((d) => d.code === code);
+      if (!record) throw new Error('Donnée importée introuvable');
+      await activateDepartment(code, record.featureCollection);
+    } else {
+      const res = await fetch(option.dataset.file);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const geojson = await res.json();
+      await activateDepartment(code, geojson);
+    }
+    departmentStatus.textContent = loadedDepartments[code].features.length +
+      ' formations chargées. Cliquez sur la carte.';
   } catch (e) {
     departmentStatus.textContent = 'Erreur de chargement : ' + e.message;
   }
 });
 
 initDepartments();
+
+/* -- Import d'un département depuis un zip BD Charm-50 (traitement 100% local) -- */
+
+const fileDepartmentZip = document.getElementById('file-department-zip');
+const inputDepartmentName = document.getElementById('input-department-name');
+const btnImportDepartment = document.getElementById('btn-import-department');
+const importStatus = document.getElementById('import-status');
+
+function findZipEntry(zip, regex) {
+  return Object.keys(zip.files).find((name) => regex.test(name) && !zip.files[name].dir);
+}
+
+btnImportDepartment.addEventListener('click', async () => {
+  const file = fileDepartmentZip.files[0];
+  if (!file) {
+    importStatus.textContent = 'Choisissez un fichier .zip BD Charm-50 (BRGM) au préalable.';
+    return;
+  }
+
+  importStatus.textContent = 'Lecture du zip…';
+  // Laisse le navigateur peindre le message avant le traitement (peut être long).
+  await new Promise((r) => setTimeout(r, 30));
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buffer);
+
+    const shpKey = findZipEntry(zip, /_S_FGEOL.*\.shp$/i);
+    if (!shpKey) {
+      throw new Error('Couche des formations (S_FGEOL) introuvable dans ce zip. ' +
+        'Vérifiez qu\'il s\'agit bien d\'un export BD Charm-50 du BRGM.');
+    }
+    const base = shpKey.slice(0, -4);
+    const dbfKey = findZipEntry(zip, new RegExp('^' + escapeRegExp(base) + '\\.dbf$', 'i'));
+    const prjKey = findZipEntry(zip, new RegExp('^' + escapeRegExp(base) + '\\.prj$', 'i'));
+
+    importStatus.textContent = 'Extraction des fichiers…';
+    await new Promise((r) => setTimeout(r, 10));
+
+    const [shpBuf, dbfBuf, prjBuf] = await Promise.all([
+      zip.files[shpKey].async('arraybuffer'),
+      dbfKey ? zip.files[dbfKey].async('arraybuffer') : null,
+      prjKey ? zip.files[prjKey].async('arraybuffer') : null
+    ]);
+
+    importStatus.textContent = 'Analyse du shapefile et reprojection…';
+    await new Promise((r) => setTimeout(r, 10));
+
+    // cpg forcé en windows-1252 : les exports BD Charm-50 n'incluent pas de
+    // fichier .cpg alors que leur .dbf est encodé en Windows-1252 (accents).
+    const geojson = await shp({ shp: shpBuf, dbf: dbfBuf, prj: prjBuf, cpg: 'windows-1252' });
+
+    importStatus.textContent = 'Simplification (' + geojson.features.length + ' polygones)…';
+    await new Promise((r) => setTimeout(r, 10));
+
+    const features = [];
+    for (const feature of geojson.features) {
+      const props = filterProperties(feature.properties || {});
+      if (!props.NOTATION && !props.DESCR) continue;
+      if (feature.geometry.type !== 'Polygon' && feature.geometry.type !== 'MultiPolygon') continue;
+      const simplified = simplifyGeometry(feature.geometry);
+      const rounded = roundCoords(simplified);
+      features.push({ type: 'Feature', properties: props, geometry: rounded });
+    }
+
+    // Détection du code département à partir du nom de fichier
+    // (convention BRGM : GEO050K_HARM_0XX_S_FGEOL_2154.shp).
+    const codeMatch = base.match(/HARM_(\d{2,3})/i);
+    const code = codeMatch ? codeMatch[1] : 'imp-' + Date.now();
+    const nom = inputDepartmentName.value.trim() || ('Département ' + code);
+
+    const record = {
+      code,
+      nom,
+      dateImport: new Date().toISOString(),
+      nbFeatures: features.length,
+      featureCollection: { type: 'FeatureCollection', features }
+    };
+
+    importStatus.textContent = 'Enregistrement local…';
+    await idbPut(record);
+    await activateDepartment(code, record.featureCollection);
+    await initDepartments();
+    selectDepartment.value = code;
+
+    importStatus.textContent = features.length + ' formations importées pour « ' + nom + ' ». Disponible hors-ligne sur cet appareil.';
+    fileDepartmentZip.value = '';
+    inputDepartmentName.value = '';
+  } catch (e) {
+    importStatus.textContent = 'Erreur d\'import : ' + e.message;
+  }
+});
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /* ---------- Identification géologique au clic (GetFeatureInfo) ---------- */
 
@@ -437,23 +693,42 @@ map.on('click', (e) => {
     }
   }
 
-  // 2) Repli sur une interrogation du WMS BRGM (résultat incertain, ces
-  //    couches scannées n'étant en général pas déclarées interrogeables).
-  if (!geolLayer || !selectGeol.value) return;
+  // 2) Aucune correspondance locale : les couches scannées/harmonisées du
+  //    BRGM sont déclarées non interrogeables ("LayerNotQueryable") sur son
+  //    WMS public, donc une interrogation directe échoue systématiquement.
+  //    On explique la situation plutôt que d'envoyer une requête vouée à échouer.
+  const departmentLoaded = Object.keys(loadedDepartments).length > 0;
+  const message = departmentLoaded
+    ? 'Ce point est hors des départements chargés ci-dessus.'
+    : 'Aucun département n\'est chargé.';
 
+  L.popup().setLatLng(e.latlng).setContent(
+    message + ' L\'identification précise nécessite les données vectorielles ' +
+    'BD Charm-50 du département concerné.<br><br>' +
+    'Pour l\'ajouter : téléchargez le fichier ' +
+    '<code>GEO050K_HARM_0XX.zip</code> correspondant depuis ' +
+    '<a href="https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50" target="_blank" rel="noopener">' +
+    'le formulaire BRGM</a> (XX = numéro du département), puis importez-le ' +
+    'vous-même via la section « Ajouter un département » du panneau (📂).' +
+    '<br><a href="' + wmsGetFeatureInfoUrl(e.latlng) + '" target="_blank" rel="noopener">' +
+    'Tenter quand même une requête au serveur BRGM</a>'
+  ).openOn(map);
+});
+
+function wmsGetFeatureInfoUrl(latlng) {
   const size = map.getSize();
   const bounds = map.getBounds();
   const crs = map.options.crs;
   const sw = crs.project(bounds.getSouthWest());
   const ne = crs.project(bounds.getNorthEast());
-  const point = map.latLngToContainerPoint(e.latlng);
+  const point = map.latLngToContainerPoint(latlng);
 
   const params = new URLSearchParams({
     SERVICE: 'WMS',
     VERSION: '1.3.0',
     REQUEST: 'GetFeatureInfo',
-    LAYERS: selectGeol.value,
-    QUERY_LAYERS: selectGeol.value,
+    LAYERS: selectGeol.value || '',
+    QUERY_LAYERS: selectGeol.value || '',
     STYLES: '',
     CRS: 'EPSG:3857',
     BBOX: [sw.x, sw.y, ne.x, ne.y].join(','),
@@ -464,38 +739,7 @@ map.on('click', (e) => {
     INFO_FORMAT: 'text/plain',
     FEATURE_COUNT: 5
   });
-  const url = BRGM_WMS_URL + '?' + params.toString();
-
-  const popup = L.popup().setLatLng(e.latlng).setContent('Interrogation du serveur BRGM…').openOn(map);
-
-  fetch(url)
-    .then((r) => r.text())
-    .then((text) => {
-      const content = formatFeatureInfo(text, url);
-      popup.setContent(content);
-    })
-    .catch(() => {
-      // Le serveur peut refuser les requêtes cross-origin (fetch) : on propose
-      // d'ouvrir la réponse brute dans un nouvel onglet en secours.
-      popup.setContent(
-        'Impossible d\'interroger le serveur depuis l\'application.<br>' +
-        '<a href="' + url + '" target="_blank" rel="noopener">Voir la réponse brute</a>'
-      );
-    });
-});
-
-function formatFeatureInfo(text, rawUrl) {
-  const cleaned = text.trim();
-  const looksEmpty = cleaned === '' ||
-    /no features? were found|aucune donnée|GetFeatureInfo results:\s*$/i.test(cleaned);
-  if (looksEmpty) {
-    return 'Aucune notation disponible ici pour cette couche ' +
-      '(les cartes scannées/harmonisées du BRGM ne publient pas toujours ' +
-      'la notation géologique en interrogation directe).<br>' +
-      '<a href="' + rawUrl + '" target="_blank" rel="noopener">Voir la réponse brute</a>';
-  }
-  return '<pre style="white-space:pre-wrap;margin:0;font-size:.8rem;">' +
-    escapeHtml(cleaned) + '</pre>';
+  return BRGM_WMS_URL + '?' + params.toString();
 }
 
 /* ---------- Position GPS ---------- */

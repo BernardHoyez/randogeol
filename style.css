@@ -102,6 +102,28 @@ html, body {
   color: #555;
   min-height: 1em;
 }
+
+#imported-list {
+  margin-top: .5rem;
+  font-size: .82rem;
+}
+#imported-list .imported-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .3rem 0;
+  border-bottom: 1px dashed var(--border);
+}
+#imported-list button {
+  border: 1px solid #b71c1c;
+  color: #b71c1c;
+  background: #fff;
+  border-radius: 5px;
+  padding: .15rem .5rem;
+  font-size: .75rem;
+  cursor: pointer;
+}
 .panel-section label {
   display: block;
   font-size: .8rem;

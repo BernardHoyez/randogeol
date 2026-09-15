@@ -51,7 +51,22 @@
       <option value="">Chargement…</option>
     </select>
     <div id="department-status" class="track-info-inline">BD Charm-50 (formations vectorisées BRGM).</div>
-    <p class="hint">Une fois un département chargé, cliquez sur la carte pour afficher la notation (ex. J2b), le nom et l'âge de la formation. Sans département chargé, le clic tente une interrogation directe du serveur BRGM (résultat non garanti).</p>
+    <p class="hint">Cliquez sur la carte pour identifier la formation (notation, nom) à partir des départements chargés ci-dessus. Hors de leur emprise, l'app indique comment ajouter le département manquant (les couches scannées du BRGM ne sont pas interrogeables directement).</p>
+  </section>
+
+  <section class="panel-section">
+    <h2>Ajouter un département</h2>
+    <p class="hint">
+      Téléchargez le zip BD Charm-50 du département voulu depuis
+      <a href="https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50" target="_blank" rel="noopener">le formulaire BRGM</a>,
+      puis importez-le ici (tout se passe sur votre appareil, sans envoi à un serveur).
+    </p>
+    <input type="file" id="file-department-zip" accept=".zip,application/zip">
+    <label for="input-department-name" style="margin-top:.5rem;">Nom du département</label>
+    <input type="text" id="input-department-name" placeholder="ex. Alpes-Maritimes (06)">
+    <button id="btn-import-department" style="margin-top:.6rem;width:100%;padding:.5rem;">Importer</button>
+    <div id="import-status" class="track-info-inline"></div>
+    <div id="imported-list"></div>
   </section>
 
   <section class="panel-section">
@@ -88,6 +103,8 @@
   </div>
 </div>
 
+<script src="./vendor/jszip/jszip.min.js"></script>
+<script src="./vendor/shpjs/shp.min.js"></script>
 <script src="./vendor/leaflet/leaflet.js"></script>
 <script src="./app.js"></script>
 </body>
