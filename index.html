@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>RandoGéol</title>
+<meta name="description" content="Superposer un tracé GPX/KML sur les cartes géologiques BRGM au 1/50 000">
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#5d4037">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="./vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header id="app-bar">
+  <button id="btn-panel-toggle" aria-label="Ouvrir le panneau">☰</button>
+  <h1>RandoGéol</h1>
+  <button id="btn-legend-toggle" aria-label="Afficher la légende géologique">Légende</button>
+</header>
+
+<div id="map"></div>
+
+<aside id="panel">
+  <section class="panel-section">
+    <h2>Fond de plan</h2>
+    <select id="select-basemap">
+      <option value="osm">OpenStreetMap</option>
+      <option value="ign-plan">IGN Plan</option>
+      <option value="ign-ortho">IGN Photographies aériennes</option>
+    </select>
+  </section>
+
+  <section class="panel-section">
+    <h2>Carte géologique BRGM 1/50 000</h2>
+    <select id="select-geol">
+      <option value="">Aucune</option>
+      <option value="SCAN_D_GEOL50">Scannée (papier + légende)</option>
+      <option value="SCAN_H_GEOL50">Harmonisée</option>
+      <option value="SCAN_H_RELIEF_GEOL50">Harmonisée + estompage relief</option>
+    </select>
+    <label for="range-opacity">Opacité</label>
+    <input type="range" id="range-opacity" min="0" max="100" value="70">
+  </section>
+
+  <section class="panel-section">
+    <h2>Tracé GPX / KML</h2>
+    <input type="file" id="file-track" accept=".gpx,.kml,application/gpx+xml,application/vnd.google-earth.kml+xml">
+    <div id="track-info" class="track-info">Aucun tracé chargé.</div>
+    <button id="btn-clear-track" disabled>Effacer le tracé</button>
+  </section>
+
+  <section class="panel-section credits">
+    <p>Fonds : © les contributeurs d'OpenStreetMap · © IGN — Géoplateforme.</p>
+    <p>Cartes géologiques : © BRGM — GéoServices (WMS <code>mapsref.brgm.fr/wxs/referentiel/geologie</code>).</p>
+  </section>
+</aside>
+
+<div id="legend-panel" hidden>
+  <div id="legend-header">
+    <span id="legend-title">Légende</span>
+    <button id="btn-legend-close" aria-label="Fermer la légende">✕</button>
+  </div>
+  <div id="legend-body">
+    <p id="legend-empty">Sélectionnez une carte géologique pour afficher sa légende.</p>
+    <img id="legend-image" alt="Légende de la carte géologique" hidden>
+  </div>
+</div>
+
+<script src="./vendor/leaflet/leaflet.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

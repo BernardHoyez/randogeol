@@ -1,0 +1,14 @@
+{
+  "name": "RandoGéol",
+  "short_name": "RandoGéol",
+  "description": "Superposer un tracé GPX ou KML sur les cartes géologiques BRGM au 1/50 000",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#5d4037",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
