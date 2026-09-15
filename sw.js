@@ -1,4 +1,4 @@
-const CACHE_NAME = 'randogeol-cache-v3';
+const CACHE_NAME = 'randogeol-cache-v5';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const PRECACHE_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './data/departments.json',
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet.css',
   './vendor/leaflet/images/layers.png',

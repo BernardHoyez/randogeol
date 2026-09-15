@@ -46,6 +46,15 @@
   </section>
 
   <section class="panel-section">
+    <h2>Identification géologique (hors-ligne)</h2>
+    <select id="select-department">
+      <option value="">Chargement…</option>
+    </select>
+    <div id="department-status" class="track-info-inline">BD Charm-50 (formations vectorisées BRGM).</div>
+    <p class="hint">Une fois un département chargé, cliquez sur la carte pour afficher la notation (ex. J2b), le nom et l'âge de la formation. Sans département chargé, le clic tente une interrogation directe du serveur BRGM (résultat non garanti).</p>
+  </section>
+
+  <section class="panel-section">
     <h2>Position GPS</h2>
     <label class="checkbox-row">
       <input type="checkbox" id="checkbox-gps">
@@ -61,13 +70,10 @@
     <button id="btn-clear-track" disabled>Effacer le tracé</button>
   </section>
 
-  <section class="panel-section">
-    <p class="hint">Cliquez sur la carte géologique pour tenter d'afficher la notation du point (selon la couche, l'information peut ne pas être publiée par le serveur BRGM).</p>
-  </section>
-
   <section class="panel-section credits">
     <p>Fonds : © les contributeurs d'OpenStreetMap · © IGN — Géoplateforme.</p>
-    <p>Cartes géologiques : © BRGM — GéoServices (WMS <code>mapsref.brgm.fr/wxs/referentiel/geologie</code>).</p>
+    <p>Cartes géologiques : © BRGM — GéoServices (WMS <code>geoservices.brgm.fr/geologie</code>).</p>
+    <p>Formations vectorielles : © BRGM — BD Charm-50 (Licence Ouverte).</p>
   </section>
 </aside>
 

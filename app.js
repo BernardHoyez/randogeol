@@ -296,9 +296,149 @@ function parseKML(text) {
   return { points, waypoints };
 }
 
+/* ---------- Identification géologique hors-ligne (BD Charm-50) ---------- */
+/* Point dans polygone sur les formations vectorielles du/des départements  */
+/* chargés (fichiers data/<code>.geojson, listés dans data/departments.json)*/
+
+const loadedDepartments = {}; // code -> FeatureCollection (avec _bbox par entité)
+
+function pointInRing(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInRings(lng, lat, rings) {
+  if (!rings.length || !pointInRing(lng, lat, rings[0])) return false;
+  for (let i = 1; i < rings.length; i++) {
+    if (pointInRing(lng, lat, rings[i])) return false; // trou (île exclue)
+  }
+  return true;
+}
+
+function pointInGeometry(lng, lat, geometry) {
+  if (!geometry) return false;
+  if (geometry.type === 'Polygon') return pointInRings(lng, lat, geometry.coordinates);
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.some((poly) => pointInRings(lng, lat, poly));
+  }
+  return false;
+}
+
+function computeBBox(geometry) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const scanRing = (ring) => ring.forEach(([x, y]) => {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  });
+  if (geometry.type === 'Polygon') geometry.coordinates.forEach(scanRing);
+  else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach((p) => p.forEach(scanRing));
+  return [minX, minY, maxX, maxY];
+}
+
+function findFormationAt(lng, lat) {
+  for (const code in loadedDepartments) {
+    const fc = loadedDepartments[code];
+    for (const feature of fc.features) {
+      const [minX, minY, maxX, maxY] = feature._bbox;
+      if (lng < minX || lng > maxX || lat < minY || lat > maxY) continue;
+      if (pointInGeometry(lng, lat, feature.geometry)) return feature.properties;
+    }
+  }
+  return null;
+}
+
+function getProp(props, candidateNames) {
+  for (const name of candidateNames) {
+    const key = Object.keys(props).find((k) => k.toUpperCase() === name);
+    if (key && props[key] !== null && props[key] !== undefined && props[key] !== '') {
+      return props[key];
+    }
+  }
+  return null;
+}
+
+function formatFormationProps(props) {
+  const notation = getProp(props, ['NOTATION', 'CODE', 'SIGLE']);
+  const nom = getProp(props, ['NOM', 'DESCR', 'LIBELLE', 'FORMATION', 'DESCRIPTIO', 'LIB']);
+  const age = getProp(props, ['AGE', 'ETAGE', 'CHRONO', 'PERIODE']);
+
+  let html = '';
+  if (notation) html += '<strong style="font-size:1.15em;">' + escapeHtml(notation) + '</strong><br>';
+  if (nom) html += escapeHtml(nom) + '<br>';
+  if (age) html += '<em>' + escapeHtml(age) + '</em>';
+
+  if (!html) {
+    html = Object.entries(props)
+      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+      .map(([k, v]) => escapeHtml(k) + ' : ' + escapeHtml(String(v)))
+      .join('<br>');
+  }
+  return html || 'Aucun attribut exploitable trouvé pour ce polygone.';
+}
+
+const selectDepartment = document.getElementById('select-department');
+const departmentStatus = document.getElementById('department-status');
+
+async function initDepartments() {
+  try {
+    const res = await fetch('./data/departments.json');
+    const list = await res.json();
+    if (!list.length) {
+      selectDepartment.innerHTML = '<option value="">Aucun département disponible</option>';
+      return;
+    }
+    selectDepartment.innerHTML =
+      '<option value="">— Choisir —</option>' +
+      list.map((d) => '<option value="' + d.code + '" data-file="' + d.fichier + '">' +
+        escapeHtml(d.nom) + '</option>').join('');
+  } catch (e) {
+    selectDepartment.innerHTML = '<option value="">Liste indisponible</option>';
+  }
+}
+
+selectDepartment.addEventListener('change', async () => {
+  const code = selectDepartment.value;
+  if (!code || loadedDepartments[code]) return;
+  const file = selectDepartment.selectedOptions[0].dataset.file;
+  departmentStatus.textContent = 'Chargement des formations…';
+  try {
+    const res = await fetch(file);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const geojson = await res.json();
+    geojson.features.forEach((f) => { f._bbox = computeBBox(f.geometry); });
+    loadedDepartments[code] = geojson;
+    departmentStatus.textContent = geojson.features.length + ' formations chargées. Cliquez sur la carte.';
+  } catch (e) {
+    departmentStatus.textContent = 'Erreur de chargement : ' + e.message;
+  }
+});
+
+initDepartments();
+
 /* ---------- Identification géologique au clic (GetFeatureInfo) ---------- */
 
 map.on('click', (e) => {
+  // 1) Priorité aux données vectorielles locales (BD Charm-50) si un
+  //    département est chargé et couvre le point cliqué.
+  if (Object.keys(loadedDepartments).length) {
+    const props = findFormationAt(e.latlng.lng, e.latlng.lat);
+    if (props) {
+      L.popup().setLatLng(e.latlng).setContent(formatFormationProps(props)).openOn(map);
+      return;
+    }
+  }
+
+  // 2) Repli sur une interrogation du WMS BRGM (résultat incertain, ces
+  //    couches scannées n'étant en général pas déclarées interrogeables).
   if (!geolLayer || !selectGeol.value) return;
 
   const size = map.getSize();
