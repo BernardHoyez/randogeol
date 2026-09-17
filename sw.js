@@ -1,4 +1,4 @@
-const CACHE_NAME = 'randogeol-cache-v8';
+const CACHE_NAME = 'randogeol-cache-v9';
 const PRECACHE_ASSETS = [
   './',
   './index.html',

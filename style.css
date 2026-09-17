@@ -189,6 +189,9 @@ html, body {
   flex-direction: column;
   overflow: hidden;
 }
+#legend-panel[hidden] {
+  display: none;
+}
 #legend-header {
   display: flex;
   align-items: center;
